@@ -24,7 +24,7 @@ describe('calendar-to-brain collector', () => {
     expect(grouped.get('2026-05-10').map((event) => event.id)).toEqual(['evt_all_day', 'evt_timed_1']);
   });
 
-  test('renders markdown with explicit redacted source and no leaked emails', () => {
+  test('renders markdown with explicit redacted source, French human date, and no leaked emails', () => {
     const events = normalizeEvents(fixture);
     const grouped = groupEventsByDay(events);
     const serviceId = ['google.calendar', 'fixture-user'].join(':');
@@ -34,6 +34,10 @@ describe('calendar-to-brain collector', () => {
       range: buildRequestedWindow('2026-05-10', '2026-05-11'),
     });
 
+    expect(markdown).toContain('title: Google Calendar 2026-05-10 (10 mai 2026)');
+    expect(markdown).toContain('human_date: 10 mai 2026');
+    expect(markdown).toContain('# Google Calendar — 2026-05-10 (10 mai 2026)');
+    expect(markdown).toContain('Date humaine: 10 mai 2026');
     expect(markdown).toContain('service: google.calendar:[redacted]');
     expect(markdown).toContain('Source: ClawVisor Google Calendar (google.calendar:[redacted])');
     expect(markdown).not.toContain(serviceId);
@@ -96,7 +100,7 @@ describe('calendar-to-brain collector', () => {
       const third = writeDayFiles(grouped, { ...meta, overwrite: true });
       expect(third.writtenFiles).toHaveLength(2);
       expect(third.skippedFiles).toHaveLength(0);
-      expect(fs.readFileSync(target, 'utf8')).toContain('# Google Calendar — 2026-05-10');
+      expect(fs.readFileSync(target, 'utf8')).toContain('# Google Calendar — 2026-05-10 (10 mai 2026)');
     } finally {
       fs.rmSync(outputRoot, { recursive: true, force: true });
     }

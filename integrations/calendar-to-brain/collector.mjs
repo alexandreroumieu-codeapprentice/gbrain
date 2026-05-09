@@ -494,22 +494,38 @@ function redactServiceIdForMarkdown(serviceId) {
   return `${cleaned.slice(0, separatorIndex)}:[redacted]`;
 }
 
+function formatHumanDateFr(day) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!match) return day;
+  const [, year, month, date] = match;
+  const utcDate = new Date(Date.UTC(Number(year), Number(month) - 1, Number(date)));
+  return new Intl.DateTimeFormat('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(utcDate);
+}
+
 function renderDayMarkdown(day, events, meta) {
   const redactedServiceId = redactServiceIdForMarkdown(meta.serviceId);
+  const humanDay = formatHumanDateFr(day);
   const lines = [
     '---',
     'type: source',
-    `title: Google Calendar ${day}`,
+    `title: Google Calendar ${day} (${humanDay})`,
     `date: ${day}`,
+    `human_date: ${humanDay}`,
     'source: clawvisor-google-calendar',
     `collected_at: ${meta.collectedAt}`,
     `event_count: ${events.length}`,
     `service: ${redactedServiceId}`,
     '---',
     '',
-    `# Google Calendar — ${day}`,
+    `# Google Calendar — ${day} (${humanDay})`,
     '',
     `- Source: ClawVisor Google Calendar (${redactedServiceId})`,
+    `- Date humaine: ${humanDay}`,
     `- Collected: ${meta.collectedAt}`,
     `- Requested range: ${meta.range.fromDate} → ${meta.range.toDateInclusive}`,
     '',
