@@ -83,6 +83,8 @@ op run --env-file "$HOME/.gbrain/gbrain-op.env" -- \
   --max-results 3
 ```
 
+Par défaut, `--write` n’écrase pas un fichier journalier existant : le fichier est listé comme `Skipped existing`. Utiliser `--overwrite` uniquement pour remplacer explicitement une page déjà présente.
+
 ### Si la tâche ClawVisor est standing
 
 Ajouter un `session_id` :

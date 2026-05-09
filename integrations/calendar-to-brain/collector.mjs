@@ -30,7 +30,9 @@ function usage() {
     '  --to YYYY-MM-DD          Inclusive local end date (defaults to --from if set)',
     '  --max-results N          Max events requested from ClawVisor (default: 3)',
     '  --dry-run                Do not write to ~/brain (default)',
+    '  --preview                With dry-run, print redacted markdown preview to stdout',
     '  --write                  Write markdown files under ~/brain/sources/google-calendar/',
+    '  --overwrite              With --write, replace existing day files (default: skip)',
     '  --task-id ID             Reuse an existing ClawVisor task id',
     '  --create-task            Create a short-lived list_events task before fetching',
     '  --service ID             Override service alias (ex: google.calendar:[redacted])',
@@ -83,9 +85,15 @@ function parseArgs(argv) {
         args.dryRun = true;
         args.write = false;
         break;
+      case '--preview':
+        args.preview = true;
+        break;
       case '--write':
         args.write = true;
         args.dryRun = false;
+        break;
+      case '--overwrite':
+        args.overwrite = true;
         break;
       case '--task-id':
         args.taskId = requireValue(arg, next);
@@ -530,18 +538,35 @@ function buildOutputPath(outputRoot, day) {
   return path.join(outputRoot, year, `${day}.md`);
 }
 
-function writeDayFiles(eventsByDay, { outputRoot, collectedAt, serviceId, range }) {
+function writeDayFiles(eventsByDay, { outputRoot, collectedAt, serviceId, range, overwrite = false }) {
   const writtenFiles = [];
+  const skippedFiles = [];
   for (const [day, events] of eventsByDay.entries()) {
     const filePath = buildOutputPath(outputRoot, day);
+    if (!overwrite && fs.existsSync(filePath)) {
+      skippedFiles.push(filePath);
+      continue;
+    }
     const markdown = renderDayMarkdown(day, events, { collectedAt, serviceId, range });
     writeFileAtomic(filePath, `${markdown}\n`, 0o644);
     writtenFiles.push(filePath);
   }
-  return writtenFiles.sort();
+  return {
+    writtenFiles: writtenFiles.sort(),
+    skippedFiles: skippedFiles.sort(),
+  };
 }
 
-function buildStdoutSummary({ eventsByDay, write, outputRoot, taskId, taskStatus }) {
+function buildPreviewMarkdown(eventsByDay, { collectedAt, serviceId, range }) {
+  const sections = [];
+  for (const [day, events] of eventsByDay.entries()) {
+    sections.push(`--- preview: ${buildOutputPath('<output-root>', day)} ---`);
+    sections.push(renderDayMarkdown(day, events, { collectedAt, serviceId, range }).trimEnd());
+  }
+  return sections.join('\n\n');
+}
+
+function buildStdoutSummary({ eventsByDay, write, outputRoot, taskId, taskStatus, preview, collectedAt, serviceId, range, skippedFiles = [] }) {
   const dayLines = [...eventsByDay.entries()].map(([day, events]) => {
     const ids = events.map((event) => event.id).join(', ');
     return `- ${day}: ${events.length} event(s), ids: ${ids}`;
@@ -556,6 +581,12 @@ function buildStdoutSummary({ eventsByDay, write, outputRoot, taskId, taskStatus
   if (!write) {
     lines.push(`No files written. Use --write to save markdown under ${outputRoot}.`);
   }
+  if (write && skippedFiles.length > 0) {
+    lines.push(`Skipped existing files: ${skippedFiles.length}. Use --overwrite to replace them.`);
+  }
+  if (!write && preview && eventsByDay.size > 0) {
+    lines.push('', '--- Markdown preview ---', buildPreviewMarkdown(eventsByDay, { collectedAt, serviceId, range }));
+  }
   return lines.join('\n');
 }
 
@@ -563,7 +594,7 @@ function updateState(stateFile, nextState) {
   writeJsonAtomic(stateFile, nextState, 0o600);
 }
 
-function buildState({ taskId, serviceId, range, events, writtenFiles, mode, approvalBlocked }) {
+function buildState({ taskId, serviceId, range, events, writtenFiles, skippedFiles = [], mode, approvalBlocked }) {
   return {
     updated_at: new Date().toISOString(),
     mode,
@@ -576,6 +607,7 @@ function buildState({ taskId, serviceId, range, events, writtenFiles, mode, appr
     },
     event_count: events.length,
     written_files: writtenFiles,
+    skipped_files: skippedFiles,
   };
 }
 
@@ -626,6 +658,7 @@ async function main(rawArgv = process.argv.slice(2)) {
   let events = [];
   let approvalBlocked = false;
   let writtenFiles = [];
+  let skippedFiles = [];
 
   if (args.mock) {
     const fixturePath = expandHome(args.mockFile ?? path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'mock-response.json'));
@@ -694,12 +727,15 @@ async function main(rawArgv = process.argv.slice(2)) {
 
   const eventsByDay = groupEventsByDay(events);
   if (args.write && events.length > 0) {
-    writtenFiles = writeDayFiles(eventsByDay, {
+    const writeResult = writeDayFiles(eventsByDay, {
       outputRoot: args.outputRoot,
       collectedAt,
       serviceId: serviceId ?? 'mock.google.calendar',
       range,
+      overwrite: args.overwrite,
     });
+    writtenFiles = writeResult.writtenFiles;
+    skippedFiles = writeResult.skippedFiles;
   }
 
   updateState(args.stateFile, buildState({
@@ -708,6 +744,7 @@ async function main(rawArgv = process.argv.slice(2)) {
     range,
     events,
     writtenFiles,
+    skippedFiles,
     mode: args.write ? 'write' : 'dry-run',
     approvalBlocked,
   }));
@@ -718,11 +755,21 @@ async function main(rawArgv = process.argv.slice(2)) {
     outputRoot: args.outputRoot,
     taskId,
     taskStatus,
+    preview: args.preview,
+    collectedAt,
+    serviceId: serviceId ?? 'mock.google.calendar',
+    range,
+    skippedFiles,
   }));
 
   if (args.write && writtenFiles.length > 0) {
     for (const filePath of writtenFiles) {
       console.log(`Wrote: ${filePath}`);
+    }
+  }
+  if (args.write && skippedFiles.length > 0) {
+    for (const filePath of skippedFiles) {
+      console.log(`Skipped existing: ${filePath}`);
     }
   }
 }
@@ -747,4 +794,5 @@ export {
   normalizeEvents,
   parseArgs,
   renderDayMarkdown,
+  writeDayFiles,
 };
