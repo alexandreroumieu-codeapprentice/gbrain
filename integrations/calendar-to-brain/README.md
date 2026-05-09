@@ -85,6 +85,28 @@ op run --env-file "$HOME/.gbrain/gbrain-op.env" -- \
 
 Par défaut, `--write` n’écrase pas un fichier journalier existant : le fichier est listé comme `Skipped existing`. Utiliser `--overwrite` uniquement pour remplacer explicitement une page déjà présente.
 
+### Piège gbrain après un overwrite local
+
+Si vous remplacez ensuite un fichier `~/brain/...` en local (surtout hors Git / non tracké), attention au faux ami :
+
+- `gbrain sync` repart de **Git HEAD** ; il peut donc ignorer votre overwrite local si ce changement n’existe pas dans l’historique Git
+- `gbrain embed` **ne réimporte pas** le markdown ; il ne sert pas à re-parser/re-chunker une page modifiée localement
+
+Pour réimporter vraiment une page ciblée, la bonne commande est :
+
+```bash
+gbrain put <slug> < ~/brain/<slug>.md
+```
+
+Exemple pour une page calendrier :
+
+```bash
+gbrain put sources/google-calendar/2026/2026-05-10 < \
+  ~/brain/sources/google-calendar/2026/2026-05-10.md
+```
+
+`gbrain put` force le triplet utile sur les pages touchées : **réimport markdown → rechunk → reembed**.
+
 ### Si la tâche ClawVisor est standing
 
 Ajouter un `session_id` :
